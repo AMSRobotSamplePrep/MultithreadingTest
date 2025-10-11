@@ -82,8 +82,11 @@ def fill_channel(P_CHANNEL_N, N_CHANNELS):
     c9.goto_safe(p_mold_loading[P_CHANNEL_N])
     c9.dispense_ml(PIPETTE, ALIQUOT_SIZE + AIR_GAP)"""
 
-    unpaused.wait()
+    ser.write("FILLING".encode('utf-8'))
     time.sleep(15)
+        
+    ser.write("FILLED".encode('utf-8'))
+
     P_CHANNEL_N = P_CHANNEL_N + 1
     print("Have filled " + str(P_CHANNEL_N) + " channels")
     return P_CHANNEL_N
@@ -102,7 +105,10 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
         c9.dispense_ml(PIPETTE, ALIQUOT_SIZE + AIR_GAP)"""
 
         unpaused.wait()
+        ser.write("FILLING".encode('utf-8'))
         time.sleep(15)
+
+        ser.write("FILLED".encode('utf-8'))
         P_CHANNEL_N = P_CHANNEL_N + 1
         print("Have filled " + str(P_CHANNEL_N) + " channels")
         
@@ -288,6 +294,8 @@ def i_and_d_to_end():
     """unload_mold(c9)"""
     unpaused.wait()
     print("Unloading mold")
+
+    ser.write("MOLDDONE".encode('utf-8'))
 
     unpaused.wait()
     print("Setting up new mold")
