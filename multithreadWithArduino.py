@@ -3,32 +3,23 @@ import time
 import threading
 from helper_functions import *
 
+# Connecting to port used by arduino
 ports = serial.tools.list_ports.comports()
 ser = serial.Serial()
 portsList = []
 
 use = "/dev/cu.usbmodem101"
 
+# * Opening serial to communitcate with arduino
 ser.baudrate = 9600
 ser.port = use
 ser.open()
 
-"""from north import NorthC9
-from Locator import *
+# * Variable Initialization
 
-from powder_settings import *
-from dispensing_helper_functions import *
-from temperature_control_v2 import *
-from elevator_commands import *
-from mold_linear_slide import *
-from pick_and_place_helper_functions import *
-from lepton_recording import LeptonRecorder"""
-
-"""recorder = LeptonRecorder()
-elevator = MoldElevator(port='COM5')"""
-
-#Variable Initialization
+# Number of channels to be filled
 global N_CHANNELS
+# Number of channels that have been filled
 global P_CHANNEL_N
 
 N_MOLDS = 2
@@ -43,48 +34,30 @@ AIR_GAP = 0.05       # aliquot + air gap should be < pipette volume
 
 P_CHANNEL_N = 0
 
+# Variables that have to be passed to threaded helper functions
 gloVars = [P_CHANNEL_N, N_CHANNELS]
 
+# * Events to pause threads when necessary as dictated by arduino input
 sonicationBegun = threading.Event()
 idBegun = threading.Event()
 unpaused = threading.Event()
 unpaused.set()
+
+# Used to stop reading serial when main loop is exited
 inMainLoop = True
 
-# Robot Initialization
-# c9 = NorthC9('sim') # FOR SIMULATION RUN
-
-# * Creating Instance of NorthC9
-"""c9 = NorthC9('A', network_serial = "FT6VDV77")
-c9.default_vel = 25 #  %
-p2 = NorthC9('C', network = c9.network)"""
-
-"""c9.get_info()
-p2.get_info()"""
-
-"""# Testing pumps
-init_system(c9, PIPETTE, LIQUID_REAGENT_1, LIQUID_REAGENT_2)
-# Setting powder cartridge up
-load_powder_cartridge(c9, speed = 1, position = powder_base_left)
-init_powder(p2)
-# Resetting elevator
-elevator.home()"""
-
 def fill_channel(P_CHANNEL_N, N_CHANNELS):
+    # Is number of channels currently filled >= number of channels to be filled?
     if P_CHANNEL_N >= N_CHANNELS:
         raise RuntimeError("Can't dispense, the number of filled channels would exceed N_CHANNELS")
+    # Is number of channels currently filled > the number of channels on the molds?
     if P_CHANNEL_N > 7:
         raise RuntimeError("Cannot dispense, all channels have already been filled")
-    """c9.goto_safe(p_vial_clamp)
-    c9.aspirate_ml(PIPETTE, ALIQUOT_SIZE)
-    c9.move_z(180)  # should be just out of vial
-    c9.aspirate_ml(PIPETTE, AIR_GAP)  # draw air gap to prevent drips
-    c9.goto_safe(p_mold_loading[P_CHANNEL_N])
-    c9.dispense_ml(PIPETTE, ALIQUOT_SIZE + AIR_GAP)"""
 
+    # Filling channel (if unpaused otherwise wait)
+    unpaused.wait()
     ser.write("FILLING".encode('utf-8'))
-    time.sleep(15)
-        
+    time.sleep(15)    
     ser.write("FILLED".encode('utf-8'))
 
     P_CHANNEL_N = P_CHANNEL_N + 1
@@ -93,17 +66,14 @@ def fill_channel(P_CHANNEL_N, N_CHANNELS):
 
 def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
     for channel in range(num):
+        # Is number of channels currently filled >= number of channels to be filled?
         if P_CHANNEL_N >= N_CHANNELS:
             break
+        # Is number of channels currently filled > the number of channels on the molds?
         if P_CHANNEL_N > 7:
             raise RuntimeError("Cannot dispense, all channels have already been filled")
-        """c9.goto_safe(p_vial_clamp)
-        c9.aspirate_ml(PIPETTE, ALIQUOT_SIZE)
-        c9.move_z(180)  # should be just out of vial
-        c9.aspirate_ml(PIPETTE, AIR_GAP)  # draw air gap to prevent drips
-        c9.goto_safe(p_mold_loading[P_CHANNEL_N])
-        c9.dispense_ml(PIPETTE, ALIQUOT_SIZE + AIR_GAP)"""
 
+        # Filling channel (if unpaused otherwise wait)
         unpaused.wait()
         ser.write("FILLING".encode('utf-8'))
         time.sleep(15)
@@ -116,9 +86,9 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
 
 def channel_and_pipette(num, gloVars):
     let_vial_go()
-    # c9.goto_safe(p_rack_side[sample_num])
-    print("Getting pipette")
 
+    get_pipette()
+    
     uncap_vial()
 
     P_CHANNEL_N = gloVars[0]
@@ -135,9 +105,74 @@ def channel(num, gloVars):
     i = fill_channels(num, P_CHANNEL_N, N_CHANNELS)
     gloVars[0] = i
 
+def mix_dry(num: int):
+    # Wait until unpaused to continue
+    unpaused.wait()
+
+    # * If it is the first sample or there is only one mold to prep, don't thread
+    if ((sample_num == 0) | (N_MOLDS < 2)):
+        # Tell arduino we're ready for sonication
+        ser.write("READYFORS".encode('utf-8'))
+        # Wait for input from arduino telling us to start sonication
+        sonicationBegun.wait()
+        print("Sonication begun")
+        sonicationBegun.clear()
+
+        # Actually sonicate
+        ser.write("SONICATING".encode('utf-8'))
+        sonicate(30)
+
+        # Tell arduino we're done sonicating
+        ser.write("DONESON".encode('utf-8'))
+
+        # If second round dry vial and place it in the safe area
+        if (num == 2):
+            unpaused.wait()
+            dry()
+
+            unpaused.wait()
+            place_vial_in_safe()
+
+    # * Otherwise use threads
+    else:
+        # Tell arduino we're ready for intaking and dispensing
+        ser.write("READYFORID".encode('utf-8'))
+        # Wait for input from arduino telling us to start intaking and dispensing
+        idBegun.wait()
+
+        # * Open thread to start intaking and dispensing
+        thread1 = threading.Thread(target=channel_and_pipette, args=(num, gloVars))
+        thread1.start()
+
+        # * At the same time
+        if (num == 1):
+            # In main thread tell arduino we're ready for sonication
+            ser.write("READYFORS".encode('utf-8'))
+
+            # Wait for input from arduino telling us we're ready for sonication
+            sonicationBegun.wait()
+            print("Sonication begun")
+            sonicationBegun.clear()
+
+            # Tell arduino we've started sonicating
+            ser.write("SONICATING".encode('utf-8'))
+            sonicate(30)
+        else:
+            sonicate(10)
+        
+        # And now tell it we're done
+        ser.write("DONESON".encode('utf-8'))
+
+        # Rejoin threads, both sonication and I&D are done
+        thread1.join()
+
+    # Dry vial (once unpaused)
+    unpaused.wait()
+    dry()
+
+# Function that simulates robot actions from setup through sonication
 def beginToSon(sample_num):
-    # * disarm_heater(2)
-    # elevator.goto_slot(sample_num)
+    # * Beginning set-up
     print("Positioning elevator")
     time.sleep(1)
     
@@ -157,11 +192,6 @@ def beginToSon(sample_num):
     unpaused.wait()
     dispense_DCDP()
     # TBP
-    #     c9.move_carousel(112.5, 88.5)
-    #     dispense(c9, LIQUID_REAGENT_2, 0.00205)
-    #     c9.move_carousel(202.5, 88.5)
-    #     c9.delay(5)
-    """c9.move_carousel(0, 0)"""
     
     # * 4. Recap Vial & Mix in TBP
     unpaused.wait()
@@ -170,81 +200,14 @@ def beginToSon(sample_num):
     unpaused.wait()
 
     # * 5. Round 1 Mix & Dry
-    #c9.delay(180) # 3 min
-    unpaused.wait()
-    if ((sample_num == 0) | (N_MOLDS < 2)):
-        ser.write("READYFORS".encode('utf-8'))
-        sonicationBegun.wait()
-        print("Sonication begun")
-        sonicationBegun.clear()
-
-        ser.write("SONICATING".encode('utf-8'))
-        sonicate(30)
-        ser.write("DONESON".encode('utf-8'))
-    else:
-        ser.write("READYFORID".encode('utf-8'))
-        idBegun.wait()
-        thread1 = threading.Thread(target=channel_and_pipette, args=(2, gloVars))
-        thread1.start()
-
-        ser.write("READYFORS".encode('utf-8'))
-        sonicationBegun.wait()
-        sonicationBegun.clear()
-        print("Sonication begun")
-
-        ser.write("SONICATING".encode('utf-8'))
-        sonicate(30)
-        ser.write("DONESON".encode('utf-8'))
-    
-        thread1.join()
-
-    unpaused.wait()
-    dry()
+    mix_dry(1)
     
     # * 6. Round 2 Mix & Dry
-    if ((sample_num == 0) | (N_MOLDS < 2)):
-        unpaused.wait()
-        sonicationBegun.wait()
-        print("Sonication begun")
-        sonicationBegun.clear()
-        
-        ser.write("SONICATING".encode('utf-8'))
-        sonicate(30)
-        ser.write("DONESON".encode('utf-8'))
-        
-        unpaused.wait()
-        dry()
-
-        unpaused.wait()
-        place_vial_in_safe()
-    else:
-        unpaused.wait()
-        ser.write("READYFORID".encode('utf-8'))
-        idBegun.wait()
-        thread2 = threading.Thread(target=channel, args=(1, gloVars))
-        thread2.start()
-
-        unpaused.wait()
-        ser.write("SONICATING".encode('utf-8'))
-        sonicate(10)
-        ser.write("DONESON".encode('utf-8'))
-
-        thread2.join()
-
-        unpaused.wait()
-        dry()
+    mix_dry(2)
 
     sonicationBegun.clear()
 
-    #c9.delay(1)
-    #c9.delay(60) # 1 min
-
-    # Reset after sonication
-    """c9.reduce_axis_position(c9.GRIPPER)  # mod gripper position by 4000
-    c9.goto_safe(home)"""
-    
-    # c9.home_axis(c9.GRIPPER, wait = False)
-
+# Function that simulates robot actions from intake and dispense through clean up
 def i_and_d_to_end():
     # * 9. Intake & Dispense Solution into Channels
     for channel in range(gloVars[0], N_CHANNELS):
@@ -259,17 +222,12 @@ def i_and_d_to_end():
     
     # Preheat the enviro chamber
     # ! Will probably need to move up to compenstate for threading time savings
-    """activate_heater(2, 200)"""
 
     unpaused.wait()
     frontT = threading.Thread(target=prompt_front)
     frontT.start()
 
     # * 10. Remove Pipette
-    # c9.goto_safe(p_tip_remover_approach)
-    # c9.goto(p_remover, accel=5)
-    # c9.move_z(292) # move up to max height to dislodge the tip
-    """remove_pipette(c9)"""
     unpaused.wait()
     print("Removing pipette")
     time.sleep(2)
@@ -282,16 +240,10 @@ def i_and_d_to_end():
     print("Returning vial to rack")
     unpaused.wait() 
     time.sleep(10)
-    """c9.goto_safe(vial_clamp)
+   
     # * 12. Return Vial to Rack
-    c9.close_gripper()
-    c9.open_clamp()
-    c9.goto_safe(vial_rack_lifted[sample_num])
-    c9.open_gripper()"""
-
     frontT.join()
     
-    """unload_mold(c9)"""
     unpaused.wait()
     print("Unloading mold")
 
@@ -300,6 +252,8 @@ def i_and_d_to_end():
     unpaused.wait()
     print("Setting up new mold")
 
+# * Function that reads statements printed to serial
+    # Listens for input from arduino
 def readSerial():
     global sonicationBegun
     global idBegun
@@ -322,27 +276,18 @@ def readSerial():
                 print("Unpaused")
 
 # * ALL HEATERS RESET, THEN SET ENVIRO CHAMBER TO 30°C
-"""disarm_heater(1)
-disarm_heater(2)
-disarm_heater(3)
-time.sleep(0.2)
-activate_heater(3, 30)"""
+
+# Beginning reading the serial
 serialThread = threading.Thread(target=readSerial)
 serialThread.start()
 
-#Begin Routine
+# * Main loop
+    # Runs sample prep for N_MOLDS number of samples
 for sample_num in range(N_MOLDS):
     beginToSon(sample_num=sample_num)
 
     if ((sample_num == 0) & (N_MOLDS > 1)):
         continue
-    
-    # * 7. Uncap Vial
-    # ! Update to take vial from safe area not directly from sonicator
-    
-    # * 8. Get Pipette
-    # c9.goto_safe(p_rack_side[sample_num])
-    # Parallel code gets pipette and starts dispensing into channels during sonication
     
     ser.write("READYFORID".encode('utf-8'))
     idBegun.wait()
@@ -353,10 +298,7 @@ for sample_num in range(N_MOLDS):
         uncap_vial()
         i_and_d_to_end()
     
-"""deactivate_heater(3)
-elevator.home()
-unload_powder_cartridge(c9, sdepeed = 1, position = powder_base_left)
-c9.goto_safe(home)"""
+
 inMainLoop = False
 serialThread.join()
 print("End of program")
