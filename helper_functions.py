@@ -109,14 +109,14 @@ def fill_channel(P_CHANNEL_N, N_CHANNELS):
     c9.goto_safe(p_mold_loading[P_CHANNEL_N])
     c9.dispense_ml(PIPETTE, ALIQUOT_SIZE + AIR_GAP)"""
 
-    time.sleep(65)
+    time.sleep(15)
     P_CHANNEL_N = P_CHANNEL_N + 1
+    print("Have filled " + str(P_CHANNEL_N) + " channels")
     return P_CHANNEL_N
 
 def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
     for channel in range(num):
         if P_CHANNEL_N >= N_CHANNELS:
-            print("Can't dispense, the number of filled channels would exceed N_CHANNELS")
             break
         if P_CHANNEL_N > 7:
             raise RuntimeError("Cannot dispense, all channels have already been filled")
@@ -127,15 +127,13 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
         c9.goto_safe(p_mold_loading[P_CHANNEL_N])
         c9.dispense_ml(PIPETTE, ALIQUOT_SIZE + AIR_GAP)"""
 
-        time.sleep(65)
+        time.sleep(15)
         P_CHANNEL_N = P_CHANNEL_N + 1
         print("Have filled " + str(P_CHANNEL_N) + " channels")
         
     return P_CHANNEL_N
 
 def channel_and_pipette(num, gloVars):
-    print("Starting process of filling channels in second thread")
-
     let_vial_go()
     # c9.goto_safe(p_rack_side[sample_num])
     print("Getting pipette")
@@ -149,8 +147,6 @@ def channel_and_pipette(num, gloVars):
     gloVars[0] = i
 
 def channel(num, gloVars):
-    print("Starting process of filling channels in second thread")
-
     let_vial_go()
     P_CHANNEL_N = gloVars[0]
     N_CHANNELS = gloVars[1]
@@ -176,7 +172,7 @@ def prompt_front():
     linear_slide_go_left()"""
 
     print("Linear slide going right and waiting for front")
-    time.sleep(80)
+    time.sleep(20)
     print("Prompt started linear slide back to the left")
 
 def place_vial_in_safe():

@@ -20,7 +20,7 @@ global N_CHANNELS
 global P_CHANNEL_N
 
 N_MOLDS = 2
-N_CHANNELS = 4
+N_CHANNELS = 8
 
 PIPETTE = 0
 LIQUID_REAGENT_1 = 1
@@ -82,12 +82,12 @@ def beginToSon(sample_num):
     # * 5. Round 1 Mix & Dry
     #c9.delay(180) # 3 min
     if ((sample_num == 0) | (N_MOLDS < 2)):
-        sonicate(180)
+        sonicate(30)
     else:
         thread1 = threading.Thread(target=channel_and_pipette, args=(2, gloVars))
         thread1.start()
 
-        sonicate(180)
+        sonicate(30)
     
         thread1.join()
 
@@ -95,7 +95,7 @@ def beginToSon(sample_num):
     
     # * 6. Round 2 Mix & Dry
     if ((sample_num == 0) | (N_MOLDS < 2)):
-        sonicate(60)
+        sonicate(30)
         
         dry()
 
@@ -104,7 +104,7 @@ def beginToSon(sample_num):
         thread2 = threading.Thread(target=channel, args=(1, gloVars))
         thread2.start()
 
-        sonicate(60)
+        sonicate(10)
 
         thread2.join()
 
@@ -134,7 +134,6 @@ def i_and_d_to_end():
 
     frontT = threading.Thread(target=prompt_front)
     frontT.start()
-    print("3rd thread opened")
 
     # * 10. Remove Pipette
     # c9.goto_safe(p_tip_remover_approach)
@@ -160,6 +159,8 @@ def i_and_d_to_end():
     
     """unload_mold(c9)"""
     print("Unloading mold")
+
+    print("Setting up new mold")
 
 
 # * ALL HEATERS RESET, THEN SET ENVIRO CHAMBER TO 30°C
@@ -192,6 +193,6 @@ for sample_num in range(N_MOLDS):
     
 """deactivate_heater(3)
 elevator.home()
-unload_powder_cartridge(c9, speed = 1, position = powder_base_left)
+unload_powder_cartridge(c9, sdepeed = 1, position = powder_base_left)
 c9.goto_safe(home)"""
 print("End of program")
