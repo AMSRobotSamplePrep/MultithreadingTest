@@ -118,59 +118,6 @@ def channel(num, gloVars):
     i = fill_channels(num, P_CHANNEL_N, N_CHANNELS)
     gloVars[0] = i
 
-def mix_dry(n: int):
-    # Wait until unpaused to continue
-    unpaused.wait()
-
-    # * If it is the first sample or there is only one mold to prep, don't thread
-    if ((sample_num == 0) | (N_MOLDS < 2)):
-        unpaused.wait()
-        if (n == 1):   
-            sonicate(30)
-
-        # If second round sonicate shorter, dry vial, and place it in the safe area
-        if (n == 2):
-            sonicate(10)
-
-    # * Otherwise use threads
-    else:
-        # Tell arduino we're ready for intaking and dispensing
-        serialLock.acquire()
-        ser.write("READYFORID".encode('utf-8'))
-        serialLock.release()
-        # Wait for input from arduino telling us to start intaking and dispensing
-        idBegun.wait()
-        
-
-        # * At the same time
-            # Wait for I&D
-        serialLock.acquire()
-        ser.write("READYFORID".encode('utf-8'))
-        serialLock.release()
-        idBegun.wait()
-        if (n == 1):
-            # * Open thread to start intaking and dispensing
-            thread1 = threading.Thread(target=channel_and_pipette, args=(2, gloVars))
-            thread1.start()
-
-            sonicate(30)
-        else:
-            # * Open thread to start intaking and dispensing
-            thread1 = threading.Thread(target=channel_and_pipette, args=(1, gloVars))
-            thread1.start()
-
-            sonicate(10)
-        
-        # Rejoin threads, both sonication and I&D are done
-        thread1.join()
-
-    unpaused.wait()
-    dry()
-
-    if (n == 2):
-        unpaused.wait()
-        place_vial_in_safe()
-
 # Function that simulates robot actions from setup through sonication
 def beginToSon(sample_num):
     # * disarm_heater(2)
