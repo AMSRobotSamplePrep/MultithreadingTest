@@ -7,6 +7,7 @@ from helper_functions import *
 ports = serial.tools.list_ports.comports()
 ser = serial.Serial()
 portsList = []
+serialLock = threading.Lock()
 
 use = "/dev/cu.usbmodem101"
 
@@ -56,15 +57,18 @@ def fill_channel(P_CHANNEL_N, N_CHANNELS):
 
     # Filling channel (if unpaused otherwise wait)
     unpaused.wait()
-    ser.write("FILLING".encode('utf-8'))
-    time.sleep(15)    
-    ser.write("FILLED".encode('utf-8'))
+    time.sleep(15)
 
     P_CHANNEL_N = P_CHANNEL_N + 1
     print("Have filled " + str(P_CHANNEL_N) + " channels")
     return P_CHANNEL_N
 
 def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
+    serialLock.acquire()
+    ser.write("FILLING".encode('utf-8'))
+    serialLock.release()
+    print("Beginning fill channels")
+    
     for channel in range(num):
         # Is number of channels currently filled >= number of channels to be filled?
         if P_CHANNEL_N >= N_CHANNELS:
@@ -75,13 +79,21 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
 
         # Filling channel (if unpaused otherwise wait)
         unpaused.wait()
-        ser.write("FILLING".encode('utf-8'))
         time.sleep(15)
 
+        serialLock.acquire()
         ser.write("FILLED".encode('utf-8'))
+        serialLock.release()
+
+
         P_CHANNEL_N = P_CHANNEL_N + 1
         print("Have filled " + str(P_CHANNEL_N) + " channels")
-        
+    
+    time.sleep(2)
+    serialLock.acquire()
+    ser.write("NOTFILLING".encode('utf-8'))
+    serialLock.release()
+    print("Ending fill channels")
     return P_CHANNEL_N
 
 def channel_and_pipette(num, gloVars):
@@ -94,6 +106,7 @@ def channel_and_pipette(num, gloVars):
     P_CHANNEL_N = gloVars[0]
     N_CHANNELS = gloVars[1]
 
+
     i = fill_channels(num, P_CHANNEL_N, N_CHANNELS)
     gloVars[0] = i
 
@@ -105,74 +118,63 @@ def channel(num, gloVars):
     i = fill_channels(num, P_CHANNEL_N, N_CHANNELS)
     gloVars[0] = i
 
-def mix_dry(num: int):
+def mix_dry(n: int):
     # Wait until unpaused to continue
     unpaused.wait()
 
     # * If it is the first sample or there is only one mold to prep, don't thread
     if ((sample_num == 0) | (N_MOLDS < 2)):
-        # Tell arduino we're ready for sonication
-        ser.write("READYFORS".encode('utf-8'))
-        # Wait for input from arduino telling us to start sonication
-        sonicationBegun.wait()
-        print("Sonication begun")
-        sonicationBegun.clear()
+        unpaused.wait()
+        if (n == 1):   
+            sonicate(30)
 
-        # Actually sonicate
-        ser.write("SONICATING".encode('utf-8'))
-        sonicate(30)
-
-        # Tell arduino we're done sonicating
-        ser.write("DONESON".encode('utf-8'))
-
-        # If second round dry vial and place it in the safe area
-        if (num == 2):
-            unpaused.wait()
-            dry()
-
-            unpaused.wait()
-            place_vial_in_safe()
+        # If second round sonicate shorter, dry vial, and place it in the safe area
+        if (n == 2):
+            sonicate(10)
 
     # * Otherwise use threads
     else:
         # Tell arduino we're ready for intaking and dispensing
+        serialLock.acquire()
         ser.write("READYFORID".encode('utf-8'))
+        serialLock.release()
         # Wait for input from arduino telling us to start intaking and dispensing
         idBegun.wait()
-
-        # * Open thread to start intaking and dispensing
-        thread1 = threading.Thread(target=channel_and_pipette, args=(num, gloVars))
-        thread1.start()
+        
 
         # * At the same time
-        if (num == 1):
-            # In main thread tell arduino we're ready for sonication
-            ser.write("READYFORS".encode('utf-8'))
+            # Wait for I&D
+        serialLock.acquire()
+        ser.write("READYFORID".encode('utf-8'))
+        serialLock.release()
+        idBegun.wait()
+        if (n == 1):
+            # * Open thread to start intaking and dispensing
+            thread1 = threading.Thread(target=channel_and_pipette, args=(2, gloVars))
+            thread1.start()
 
-            # Wait for input from arduino telling us we're ready for sonication
-            sonicationBegun.wait()
-            print("Sonication begun")
-            sonicationBegun.clear()
-
-            # Tell arduino we've started sonicating
-            ser.write("SONICATING".encode('utf-8'))
             sonicate(30)
         else:
+            # * Open thread to start intaking and dispensing
+            thread1 = threading.Thread(target=channel_and_pipette, args=(1, gloVars))
+            thread1.start()
+
             sonicate(10)
         
-        # And now tell it we're done
-        ser.write("DONESON".encode('utf-8'))
-
         # Rejoin threads, both sonication and I&D are done
         thread1.join()
 
-    # Dry vial (once unpaused)
     unpaused.wait()
     dry()
 
+    if (n == 2):
+        unpaused.wait()
+        place_vial_in_safe()
+
 # Function that simulates robot actions from setup through sonication
 def beginToSon(sample_num):
-    # * Beginning set-up
+    # * disarm_heater(2)
+    # elevator.goto_slot(sample_num)
     print("Positioning elevator")
     time.sleep(1)
     
@@ -191,7 +193,6 @@ def beginToSon(sample_num):
     # Dispense DCPD
     unpaused.wait()
     dispense_DCDP()
-    # TBP
     
     # * 4. Recap Vial & Mix in TBP
     unpaused.wait()
@@ -200,25 +201,107 @@ def beginToSon(sample_num):
     unpaused.wait()
 
     # * 5. Round 1 Mix & Dry
-    mix_dry(1)
+    #c9.delay(180) # 3 min
+    unpaused.wait()
+    if ((sample_num == 0) | (N_MOLDS < 2)):
+        ser.write("READYFORS".encode('utf-8'))
+
+        sonicationBegun.wait()
+        print("Sonication begun")
+        sonicationBegun.clear()
+        
+        ser.write("SONICATING".encode('utf-8'))
+        sonicate(30)
+    else:
+        serialLock.acquire()
+        ser.write("READYFORID".encode('utf-8'))
+        serialLock.release()
+        idBegun.wait()
+        thread1 = threading.Thread(target=channel_and_pipette, args=(2, gloVars))
+        thread1.start()
+
+        time.sleep(0.5)
+
+        serialLock.acquire()
+        ser.write("READYFORS".encode('utf-8'))
+        serialLock.release()
+        sonicationBegun.wait()
+        sonicationBegun.clear()
+        print("Sonication begun")
+
+        serialLock.acquire()
+        ser.write("SONICATING".encode('utf-8'))
+        serialLock.release()
+        sonicate(30)
+    
+        thread1.join()
+
+    unpaused.wait()
+    dry()
     
     # * 6. Round 2 Mix & Dry
-    mix_dry(2)
+    if ((sample_num == 0) | (N_MOLDS < 2)):
+        unpaused.wait()
+
+        sonicate(30)
+        serialLock.acquire()
+        ser.write("DONESON".encode('utf-8'))
+        serialLock.release()
+        
+        unpaused.wait()
+        dry()
+
+        unpaused.wait()
+        place_vial_in_safe()
+    else:
+        unpaused.wait()
+        thread2 = threading.Thread(target=channel, args=(1, gloVars))
+        thread2.start()
+
+        unpaused.wait()
+        sonicate(10)
+        serialLock.acquire()
+        ser.write("DONESON".encode('utf-8'))
+        serialLock.release()
+
+        thread2.join()
+        idBegun.clear()
+
+        unpaused.wait()
+        dry()
 
     sonicationBegun.clear()
 
 # Function that simulates robot actions from intake and dispense through clean up
 def i_and_d_to_end():
+    print("Beginning I_and_D_to_end")
+    
+    serialLock.acquire()
+    ser.write("READYFORID".encode('utf-8'))
+    serialLock.release()
+    idBegun.wait()
+    
+    # Tell the arduino that we have started i&d
+    unpaused.wait()
+    serialLock.acquire()
+    ser.write("FILLING".encode('utf-8'))
+    serialLock.release()
+
     # * 9. Intake & Dispense Solution into Channels
     for channel in range(gloVars[0], N_CHANNELS):
         unpaused.wait()
         if gloVars[0] > 7:
             raise RuntimeError("Cannot dispense, all channels have already been filled")
         fill_channel(gloVars[0], N_CHANNELS)
+        serialLock.acquire()
+        ser.write("FILLED".encode('utf-8'))
+        serialLock.release()
         gloVars[0] += 1
     gloVars[0] = 0
 
     idBegun.clear()
+    time.sleep(2)
+    ser.write("NOTFILLING".encode('utf-8'))
     
     # Preheat the enviro chamber
     # ! Will probably need to move up to compenstate for threading time savings
@@ -247,10 +330,13 @@ def i_and_d_to_end():
     unpaused.wait()
     print("Unloading mold")
 
+    serialLock.acquire()
     ser.write("MOLDDONE".encode('utf-8'))
+    serialLock.release()
 
     unpaused.wait()
     print("Setting up new mold")
+    time.sleep(2)
 
 # * Function that reads statements printed to serial
     # Listens for input from arduino
@@ -281,6 +367,8 @@ def readSerial():
 serialThread = threading.Thread(target=readSerial)
 serialThread.start()
 
+
+
 # * Main loop
     # Runs sample prep for N_MOLDS number of samples
 for sample_num in range(N_MOLDS):
@@ -288,9 +376,7 @@ for sample_num in range(N_MOLDS):
 
     if ((sample_num == 0) & (N_MOLDS > 1)):
         continue
-    
-    ser.write("READYFORID".encode('utf-8'))
-    idBegun.wait()
+
     i_and_d_to_end()
     
     if ((sample_num == N_MOLDS - 1) & (N_MOLDS > 1)):
