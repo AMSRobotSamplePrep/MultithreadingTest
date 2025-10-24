@@ -57,7 +57,7 @@ def fill_channel(P_CHANNEL_N, N_CHANNELS):
 
     # Filling channel (if unpaused otherwise wait)
     unpaused.wait()
-    time.sleep(15)
+    time.sleep(5)
 
     P_CHANNEL_N = P_CHANNEL_N + 1
     print("Have filled " + str(P_CHANNEL_N) + " channels")
@@ -79,10 +79,11 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
 
         # Filling channel (if unpaused otherwise wait)
         unpaused.wait()
-        time.sleep(15)
+        time.sleep(5)
 
         serialLock.acquire()
         ser.write("FILLED".encode('utf-8'))
+        print("Serial message sent - FILLED")
         serialLock.release()
 
 
@@ -92,6 +93,7 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
     time.sleep(2)
     serialLock.acquire()
     ser.write("NOTFILLING".encode('utf-8'))
+    print("Serial message sent - NOTFILLING")
     serialLock.release()
     print("Ending fill channels")
     return P_CHANNEL_N
@@ -158,7 +160,7 @@ def beginToSon(sample_num):
         sonicationBegun.clear()
         
         ser.write("SONICATING".encode('utf-8'))
-        sonicate(30)
+        sonicate(10)
     else:
         serialLock.acquire()
         ser.write("READYFORID".encode('utf-8'))
@@ -179,45 +181,65 @@ def beginToSon(sample_num):
         serialLock.acquire()
         ser.write("SONICATING".encode('utf-8'))
         serialLock.release()
-        sonicate(30)
+        sonicate(10)
     
         thread1.join()
+        time.sleep(1.5)
 
     unpaused.wait()
+    ser.write("DRYING".encode('utf-8'))
     dry()
-    
+    ser.write("NOTDRYING".encode('utf-8'))
     # * 6. Round 2 Mix & Dry
     if ((sample_num == 0) | (N_MOLDS < 2)):
         unpaused.wait()
 
-        sonicate(30)
+        sonicate(4)
+        
+        unpaused.wait()
+        ser.write("DRYING".encode('utf-8'))
+        dry()
+        ser.write("NOTDRYING".encode('utf-8'))
+
+        time.sleep(1.5)
+
+        unpaused.wait()
         serialLock.acquire()
         ser.write("DONESON".encode('utf-8'))
         serialLock.release()
-        
-        unpaused.wait()
-        dry()
 
         unpaused.wait()
         place_vial_in_safe()
     else:
+
+        time.sleep(2)
         unpaused.wait()
         thread2 = threading.Thread(target=channel, args=(1, gloVars))
         thread2.start()
 
         unpaused.wait()
-        sonicate(10)
-        serialLock.acquire()
-        ser.write("DONESON".encode('utf-8'))
-        serialLock.release()
+        sonicate(4)
 
         thread2.join()
         idBegun.clear()
 
+        time.sleep(1.5)
+
         unpaused.wait()
+        ser.write("DRYING".encode('utf-8'))
         dry()
+        ser.write("NOTDRYING".encode('utf-8'))
+
+        time.sleep(1.5)
+
+        serialLock.acquire()
+        ser.write("DONESON".encode('utf-8'))
+        print("Serial message sent - DONESON")
+        time.sleep(1)
+        serialLock.release()
 
     sonicationBegun.clear()
+    time.sleep(2.5)
 
 # Function that simulates robot actions from intake and dispense through clean up
 def i_and_d_to_end():
@@ -283,7 +305,7 @@ def i_and_d_to_end():
 
     unpaused.wait()
     print("Setting up new mold")
-    time.sleep(2)
+    time.sleep(1)
 
 # * Function that reads statements printed to serial
     # Listens for input from arduino
