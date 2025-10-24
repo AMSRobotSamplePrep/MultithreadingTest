@@ -83,7 +83,6 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
 
         serialLock.acquire()
         ser.write("FILLED".encode('utf-8'))
-        print("Serial message sent - FILLED")
         serialLock.release()
 
 
@@ -93,12 +92,13 @@ def fill_channels(num, P_CHANNEL_N, N_CHANNELS):
     time.sleep(2)
     serialLock.acquire()
     ser.write("NOTFILLING".encode('utf-8'))
-    print("Serial message sent - NOTFILLING")
     serialLock.release()
+
     print("Ending fill channels")
     return P_CHANNEL_N
 
 def channel_and_pipette(num, gloVars):
+    # ! Add logic to display preparing on second line
     let_vial_go()
 
     get_pipette()
@@ -113,6 +113,7 @@ def channel_and_pipette(num, gloVars):
     gloVars[0] = i
 
 def channel(num, gloVars):
+    # ! Add logic to display preparing on second line
     let_vial_go()
     P_CHANNEL_N = gloVars[0]
     N_CHANNELS = gloVars[1]
@@ -124,6 +125,8 @@ def channel(num, gloVars):
 def beginToSon(sample_num):
     # * disarm_heater(2)
     # elevator.goto_slot(sample_num)
+    
+    # ! Have first line displaying setting up
     print("Positioning elevator")
     time.sleep(1)
     
@@ -160,7 +163,9 @@ def beginToSon(sample_num):
         sonicationBegun.clear()
         
         ser.write("SONICATING".encode('utf-8'))
-        sonicate(10)
+        for i in range(10):
+            unpaused.wait()
+            sonicate(1)
     else:
         serialLock.acquire()
         ser.write("READYFORID".encode('utf-8'))
@@ -181,7 +186,9 @@ def beginToSon(sample_num):
         serialLock.acquire()
         ser.write("SONICATING".encode('utf-8'))
         serialLock.release()
-        sonicate(10)
+        for i in range(10):
+            unpaused.wait()
+            sonicate(1)
     
         thread1.join()
         time.sleep(1.5)
@@ -194,14 +201,15 @@ def beginToSon(sample_num):
     if ((sample_num == 0) | (N_MOLDS < 2)):
         unpaused.wait()
 
-        sonicate(4)
+        for i in range(4):
+            unpaused.wait()
+            sonicate(1)
         
         unpaused.wait()
         ser.write("DRYING".encode('utf-8'))
         dry()
-        ser.write("NOTDRYING".encode('utf-8'))
 
-        time.sleep(1.5)
+ 
 
         unpaused.wait()
         serialLock.acquire()
@@ -211,14 +219,15 @@ def beginToSon(sample_num):
         unpaused.wait()
         place_vial_in_safe()
     else:
-
         time.sleep(2)
         unpaused.wait()
         thread2 = threading.Thread(target=channel, args=(1, gloVars))
         thread2.start()
 
         unpaused.wait()
-        sonicate(4)
+        for i in range(4):
+            unpaused.wait()
+            sonicate(1)
 
         thread2.join()
         idBegun.clear()
@@ -228,9 +237,8 @@ def beginToSon(sample_num):
         unpaused.wait()
         ser.write("DRYING".encode('utf-8'))
         dry()
-        ser.write("NOTDRYING".encode('utf-8'))
 
-        time.sleep(1.5)
+
 
         serialLock.acquire()
         ser.write("DONESON".encode('utf-8'))
@@ -239,7 +247,7 @@ def beginToSon(sample_num):
         serialLock.release()
 
     sonicationBegun.clear()
-    time.sleep(2.5)
+    time.sleep(1)
 
 # Function that simulates robot actions from intake and dispense through clean up
 def i_and_d_to_end():
@@ -270,11 +278,12 @@ def i_and_d_to_end():
 
     idBegun.clear()
     time.sleep(2)
-    ser.write("NOTFILLING".encode('utf-8'))
+    # ser.write("NOTFILLING".encode('utf-8'))
     
     # Preheat the enviro chamber
     # ! Will probably need to move up to compenstate for threading time savings
 
+    ser.write("PROMPTING".encode('utf-8'))
     unpaused.wait()
     frontT = threading.Thread(target=prompt_front)
     frontT.start()
@@ -291,7 +300,7 @@ def i_and_d_to_end():
     unpaused.wait()
     print("Returning vial to rack")
     unpaused.wait() 
-    time.sleep(10)
+    time.sleep(2)
    
     # * 12. Return Vial to Rack
     frontT.join()

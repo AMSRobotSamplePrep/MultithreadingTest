@@ -11,8 +11,9 @@ bool rid = false;
 
 bool sonicating = false;
 bool iding = false;
+bool fronting = false;
 
-bool blink = false;
+int blink = 0;
 
 // State change detection
 int lastPausedVal = 0;
@@ -96,20 +97,38 @@ void loop() {
   if (Serial.available() > 0){
     String msg = Serial.readString();
 
-    if (msg == "READYFORS") {
+    if (msg == "FILLED") {
+      filled += 1;
+      if (filled % N_CHANNELS == 0) {
+        iding = false;
+        idFinished += 1;
+        filled = 0;
+        if (idFinished == 2) {
+          idDefault = "Done";
+        }
+      }
+    }
+    
+    else if (msg == "READYFORS") {
       rs = true;
     }
-    else if (msg == "SONICATING") {
-      sonicating = true;
-      sDefault = "Sonicating...";
+    else if (msg == "READYFORID") {
+      rid = true;
     }
-    else if (msg == "DRYING") {
-      sDefault = "Drying...";
+
+    else if (msg == "NOTFILLING") {
+      iding = false;
+      if (idFinished == 2) {
+          idDefault = "Done";
+        } else {
+          idDefault = "Waiting...";
+        }
     }
     else if (msg == "NOTDRYING") {
       sDefault = "Sonicating...";
     }
-    if (msg == "DONESON") {
+
+    else if (msg == "DONESON") {
       sonicating = false;
       sDefault = "Waiting...";
       sFinished += 1;
@@ -118,29 +137,24 @@ void loop() {
         sDefault = "Done";
       }
     }
-    if (msg == "READYFORID") {
-      rid = true;
-    }
-    if (msg == "FILLING") {
+    else if (msg == "FILLING") {
       iding = true;
     }
-    if (msg == "NOTFILLING") {
-      iding = false;
-      idDefault = "Waiting...";
+    else if (msg == "SONICATING") {
+      sonicating = true;
+      sDefault = "Sonicating...";
     }
-    if (msg == "FILLED") {
-      filled += 1;
-      if (filled % N_CHANNELS == 0) {
-        idFinished += 1;
-        filled = 0;
-      }
+    else if (msg == "DRYING") {
+      sDefault = "Drying...";
     }
-    if (msg == "MOLDDONE") {
+
+    else if (msg == "PROMPTING") {
+      fronting = true;
+    }
+    else if (msg == "MOLDDONE") {
+      fronting = false;
       fFinished += 1;
     }
-    if (idFinished == 2) {
-          idDefault = "Done";
-        }
   }
 
   if (paused) {
@@ -149,6 +163,7 @@ void loop() {
     display.setTextSize(2);
     display.print("PAUSED");
     display.display();
+    blink = 3;
   } else {
     display.clearDisplay();
     sbDisplay();
@@ -159,8 +174,8 @@ void loop() {
     updateIDLights();
     updateFLights();
 
-    blink = !blink;
-    delay(400);
+    blink += 1;
+    delay(200);
   }
 
   lastPausedVal = pausedVal;
@@ -211,7 +226,7 @@ void updateSLights() {
     digitalWrite(3, HIGH);
     // Blink the second sonicating light
     if (sonicating) {
-      if (blink) {
+      if ((blink % 4 == 0) || (blink % 4 == 1)) {
         digitalWrite(4, HIGH);
       } else {
         digitalWrite(4, LOW);
@@ -230,7 +245,7 @@ void updateSLights() {
   else {
     // Blink the first sonicating light
     if (sonicating) {
-      if (blink) {
+      if ((blink % 4 == 0) || (blink % 4 == 1)) {
         digitalWrite(3, HIGH);
       } else {
         digitalWrite(3, LOW);
@@ -248,7 +263,7 @@ void updateIDLights() {
     digitalWrite(9, HIGH);
     // Blink the second id light
     if (iding) {
-      if (blink) {
+      if ((blink % 4 == 0) || (blink % 4 == 1)) {
         digitalWrite(10, HIGH);
       } else {
         digitalWrite(10, LOW);
@@ -267,7 +282,7 @@ void updateIDLights() {
   else {
     // Blink the first id light
     if (iding) {
-      if (blink) {
+      if ((blink % 4 == 0) || (blink % 4 == 1)) {
         digitalWrite(9, HIGH);
       } else {
         digitalWrite(9, LOW);
@@ -280,14 +295,42 @@ void updateIDLights() {
 }
 
 void updateFLights() {
+  // Keep first front light solid
   if (fFinished == 1) {
     digitalWrite(11, HIGH);
-  } else if (fFinished == 2) {
+    // Blink the second front light
+    if (fronting) {
+      if ((blink % 4 == 0) || (blink % 4 == 1)) {
+        digitalWrite(12, HIGH);
+      } else {
+        digitalWrite(12, LOW);
+      }
+    }
+    else {
+      digitalWrite(12, LOW);
+    }
+  } 
+  // Keep both front lights solid
+  else if (idFinished == 2) {
     digitalWrite(11, HIGH);
     digitalWrite(12, HIGH);
-  } else {
-    digitalWrite(11, LOW);
-    digitalWrite(12, LOW);
+  } 
+  // Neither front light solid
+  else {
+    // Blink the first front light
+    if (fronting) {
+      digitalWrite(LED_BUILTIN, HIGH);
+
+      if ((blink % 4 == 0) || (blink % 4 == 1)) {
+        digitalWrite(11, HIGH);
+      } else {
+        digitalWrite(11, LOW);
+      }
+    }
+    else {
+      digitalWrite(11, LOW);
+      digitalWrite(12, LOW);
+    }
   }
 }
 
